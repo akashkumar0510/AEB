@@ -1,0 +1,68 @@
+rrApp = roadrunnerSetup;
+close(rrApp)
+helperSetupEuroNCAPTest
+modelName = "DrivingTestBench";
+open_system(modelName)
+open_system("Controller")
+open_system(modelName + "/Vehicle Dynamics/Vehicle Dynamics")
+open_system(modelName+"/Vehicle Dynamics/Vehicle Dynamics/3DOF")
+open_system("VehDyn14DOF")
+open_system(modelName + "/Scenario and Environment")
+testName = "SA AEB CCRm";
+ncapSpecTable = ncapSpec(testName);
+disp(ncapSpecTable)
+egoSpeed = 18.056; % ego speed in meters per second
+impactOverlap = "75%";
+egoSpeedIndices = (find(abs(ncapSpecTable{:,1}-egoSpeed) < 1e-2));
+impactOverlapIndex = find(ncapSpecTable{egoSpeedIndices,2} == impactOverlap);
+variantIndex = egoSpeedIndices(impactOverlapIndex);
+disp(variantIndex)
+egoAssetFile = "Vehicles/ADT Vehicles/SK_Sedan.fbx_rrx";
+egoAssetDim = helperGetActorDimensions(egoAssetFile);
+[rrScenarioFileName,testData] = helperCreateEuroNCAPscenario(testName,variantIndex,egoAssetDim,egoAssetFile);
+rrApp = roadrunner;
+openScenario(rrApp,rrScenarioFileName)
+rrSim = createSimulation(rrApp);
+set(rrSim,Logging="on")
+set(rrSim,PacerStatus="Off")
+set(rrSim,MaxSimulationTime=testData.TestEndTime)
+stepSize = 0.03;
+set(rrSim,StepSize=stepSize)
+drivingConfigObj  = configureDrivingTestBench;
+vehicleVariant = drivingConfigObj.VehicleParameters("Fidelity", "3DOF");
+setup(drivingConfigObj,AEBEnable=0,TestStartTime=testData.TestStartTime,StepSize=stepSize,Vehicle=vehicleVariant)
+fprintf("\nConfiguration of %s has been successfully completed.\n", modelName)
+set(rrSim,SimulationCommand="Start")
+while strcmp(get(rrSim,"SimulationStatus"),"Running")
+    pause(1)
+end
+simulationLog = get(rrSim,"SimulationLog");
+diagnostics = simulationLog.get("Diagnostics");
+if(strcmp(diagnostics(end).Message, ...
+        "Simulation failed: Collision occurred between Actor VUT  and Actor GVT ."))
+    disp("Collision occurred between VUT And GVT.")
+else
+    error("Collision did not occur between VUT and GVT.")
+end
+rrScenario.SimulatorInstance = rrApp;
+rrScenario.SimulationInstance = rrSim;
+rrDescriptor = getScenarioDescriptor(rrScenario,Simulator="RoadRunner");
+% Get impact overlap from ncapSpecTable.
+impactOverlap = ncapSpecTable(variantIndex,:).("ImpactOverlap");
+hfig = helperPlotActorsAtCollision(rrDescriptor,testName,ImpactOverlapPercentage=impactOverlap);
+close(hfig)
+delete(rrSim)
+pause(5)
+rrSim = createSimulation(rrApp);
+set(rrSim,Logging="on")
+set(rrSim,PacerStatus="Off")
+set(rrSim,MaxSimulationTime=testData.TestEndTime)
+setup(drivingConfigObj,AEBEnable=1,TestStartTime=testData.TestStartTime,StepSize=stepSize,Vehicle=vehicleVariant)
+fprintf("\nSetup of DrivingTestBench complete.\n")
+set(rrSim,SimulationCommand="Start")
+while strcmp(get(rrSim,"SimulationStatus"),"Running")
+    pause(1)
+end
+simulationLog = get(rrSim,"SimulationLog");
+helperPlotAEBResults(out.logsout,rrScenarioFileName)
+close(rrApp)
